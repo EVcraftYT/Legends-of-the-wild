@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Legends of the Wild</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#101a20;color:#fff;font-family:system-ui,Arial,sans-serif;overflow:hidden}
+#game{position:fixed;inset:0}canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;inset:12px 12px auto;display:flex;justify-content:space-between;gap:10px;pointer-events:none;flex-wrap:wrap}
+.panel{background:#101820d9;border:1px solid #ffffff35;border-radius:12px;padding:9px 12px;box-shadow:0 3px 12px #0005}
+#stats{min-width:190px;font-size:13px}#stats strong{font-size:15px}#location{text-align:right;font-weight:800;letter-spacing:.08em}
+.bar{height:8px;background:#39434a;border-radius:9px;overflow:hidden;margin-top:5px;width:170px}.fill{height:100%;background:#45d483;width:100%}
+#message{position:absolute;left:50%;top:90px;transform:translateX(-50%);max-width:min(90vw,520px);text-align:center;background:#101820dc;border:1px solid #ffffff35;border-radius:12px;padding:10px 15px;font-size:14px;pointer-events:none}
+#help{position:absolute;left:12px;bottom:12px;font-size:12px;color:#fff;background:#101820c9;padding:8px 11px;border-radius:9px}
+#buttons{position:absolute;right:12px;bottom:12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+button{border:1px solid #ffffff45;border-radius:10px;background:#182b35ed;color:white;padding:10px 13px;font-weight:700;font-size:13px;cursor:pointer}
+button:hover{background:#31505d}button:active{transform:scale(.97)}
+#touch{display:none;position:absolute;bottom:76px;left:12px;gap:4px;grid-template-columns:42px 42px 42px;grid-template-rows:42px 42px}
+#touch button{padding:0;font-size:18px;touch-action:none}
+#touch .blank{visibility:hidden}
+#touchActions{display:none;position:absolute;bottom:76px;right:12px;gap:7px}
+#touchActions button{width:54px;height:54px;padding:3px;font-size:11px;touch-action:none}
+#modal{position:absolute;inset:0;background:#061017dd;display:none;place-items:center;padding:20px}
+#modalCard{width:min(440px,95vw);max-height:80vh;overflow:auto;background:#182a32;border:1px solid #ffffff35;border-radius:16px;padding:20px}
+#modalCard h2{margin:0 0 12px}#modalCard p{line-height:1.5;color:#d5e0e5}
+@media(max-width:700px){#touch,#touchActions{display:grid}#help{bottom:12px;max-width:45%;font-size:10px}#buttons{bottom:12px;right:8px}#buttons button{padding:8px;font-size:11px}#message{top:115px;font-size:12px}#stats{font-size:11px}.bar{width:125px}}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+ <div class="panel" id="stats">
+  ❤️ <strong id="health">100 / 100</strong><div class="bar"><div class="fill" id="healthBar"></div></div>
+  ⭐ Level <strong id="level">1</strong> · XP <span id="xp">0 / 50</span><br>
+  🪙 <strong id="coins">0</strong> · 🍖 <strong id="food">5</strong>
+ </div>
+ <div class="panel" id="location">🏕️ CAMPSITE<br><small id="weapon">Wooden Sword</small></div>
+</div>
+<div id="message">Welcome, adventurer! Explore your campsite. WASD to move, mouse to look, Space to attack, E to interact.</div>
+<div id="help">WASD: move · Shift: run · Mouse: look · Space: attack · E: interact · F: eat</div>
+<div id="buttons">
+ <button id="mapBtn">🗺️ Map</button><button id="inventoryBtn">🎒 Inventory</button>
+ <button id="bossBtn">👹 Boss Arena</button><button id="fullBtn">⛶ Fullscreen</button>
+</div>
+<div id="touch">
+ <button class="blank"> </button><button data-key="w">▲</button><button class="blank"> </button>
+ <button data-key="a">◀</button><button data-key="s">▼</button><button data-key="d">▶</button>
+</div>
+<div id="touchActions"><button id="eatTouch">🍖<br>Eat</button><button id="attackTouch">⚔️<br>Hit</button><button id="runTouch">🏃<br>Run</button></div>
+<div id="modal"><div id="modalCard"><h2 id="modalTitle"></h2><div id="modalBody"></div><button id="closeModal">Close</button></div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+<script>
+(()=>{
+'use strict';
+const $=id=>document.getElementById(id);
+const say=t=>{$('message').textContent=t};
+if(!window.THREE){say('Could not load the 3D engine. Check your internet connection and refresh.');return;}
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x91c8df);scene.fog=new THREE.Fog(0x91c8df,45,115);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,180);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;$('game').appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xccecff,0x52613c,2));
+const sun=new THREE.DirectionalLight(0xfff0d2,2.2);sun.position.set(-25,40,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);scene.add(sun);
+const mat=(color,roughness=.9)=>new THREE.MeshStandardMaterial({color,roughness});
+const M={grass:mat(0x4c8c45),grass2:mat(0x376e3a),dirt:mat(0x987447),wood:mat(0x79502d),leaves:mat(0x245d36),leaf2:mat(0x347844),stone:mat(0x777e83),dark:mat(0x252a30),tent:mat(0xb56c39),roof:mat(0x713e2b),skin:mat(0xd9a477),blue:mat(0x2875bd),pants:mat(0x343e65),iron:mat(0xaeb9c2),gold:mat(0xffc928),red:mat(0xb83229),purple:mat(0x6636a0),ice:mat(0x91d9ed),fire:mat(0xff6b1a),white:mat(0xf0eee5),crystal:mat(0x51d4e6)};
+const boxGeo=new THREE.BoxGeometry(1,1,1);
+function cube(x,y,z,sx,sy,sz,material,parent=scene){let o=new THREE.Mesh(boxGeo,material);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o;}
+function ground(x,z,w,d,material){cube(x,-.35,z,w,.7,d,material);}
+ground(0,0,100,100,M.grass);
+for(let i=0;i<100;i++){let x=(Math.random()-.5)*95,z=(Math.random()-.5)*95;if(Math.abs(x)<7&&Math.abs(z)<7)continue;let g=cube(x,.015,z,.35,.03,.35,Math.random()>.5?M.grass2:M.dirt);g.rotation.y=Math.random()*3;}
+function tree(x,z,scale=1){cube(x,.9*scale,z,.55*scale,1.8*scale,.55*scale,M.wood);let a=cube(x,2.25*scale,z,2.4*scale,2.5*scale,2.4*scale,M.leaves);let b=cube(x,3.35*scale,z,1.55*scale,1.6*scale,1.55*scale,M.leaf2);}
+function house(x,z,roof=M.tent){cube(x,1.25,z,4,2.5,3.5,M.wood);let r=cube(x,2.85,z,4.5,1.2,4,roof);r.rotation.z=.12;cube(x,1,z-1.78,.9,2,.12,M.dark);}
+function rock(x,z,s=1){let r=cube(x,.6*s,z,1.5*s,1.2*s,1.3*s,M.stone);r.rotation.y=Math.random();}
+ // Campsite
+house(-3,1,M.tent);cube(2,.18,3,1,.35,1,M.dark);let flame=cube(2,.48,3,.42,.7,.42,M.fire);cube(2,.8,3,.2,.3,.2,M.gold);cube(-.5,.55,3,1.7,.7,.8,M.wood);
+for(let x=9;x<29;x+=4)for(let z=-27;z<3;z+=5)tree(x,z,.8+Math.random()*.5);
+for(let x=-29;x<-10;x+=5)for(let z=-25;z<3;z+=5)tree(x,z,.9);
+for(let i=0;i<3;i++)house(12+i*5,14,i===1?M.red:M.tent);
+for(let i=0;i<7;i++){let r=rock(-20+i*1.8,-18-Math.random()*2,1+Math.random()*.7);if(i===3)cube(-20+i*1.8,.6,-16,2,1.2,1,M.dark);}
+for(let i=0;i<5;i++){let x=-26+i*2.5;let m=cube(x,2+i*.8,21,5+i*.5,4+i*1.5,5,M.ice);m.rotation.z=(Math.random()-.5)*.12;}
+for(let i=0;i<10;i++){cube((Math.random()-.5)*65,.04,(Math.random()-.5)*65,.15,.12,.15,M.white);}
+const player=new THREE.Group();scene.add(player);
+cube(0,1.05,0,.8,1.15,.55,M.blue,player);cube(0,1.9,0,.72,.7,.7,M.skin,player);cube(0,2.2,-.04,.75,.2,.73,M.wood,player);
+cube(-.23,.28,0,.3,.55,.38,M.pants,player);cube(.23,.28,0,.3,.55,.38,M.pants,player);
+let sword=cube(.62,1.15,-.05,.13,.95,.16,M.iron,player);cube(.62,.75,-.05,.4,.13,.2,M.wood,player);
+player.position.set(0,0,0);
+const monsters=[];
+function makeMonster(name,x,z,hp,damage,xp,coins,color,boss=false){let g=new THREE.Group();scene.add(g);cube(0,.8,0,boss?2.1:1,1.4,boss?2:1,color,g);cube(0,1.7,0,boss?1.5:.8,boss?1.3:.6,color,g);cube(-.2,1.8,-.35,.13,.13,.1,M.gold,g);cube(.2,1.8,-.35,.13,.13,.1,M.gold,g);g.position.set(x,0,z);let m={name,x,z,hp,max:hp,damage,xp,coins,color,group:g,boss,alive:true,lastHit:0};monsters.push(m);return m;}
+makeMonster('Wild Wolf',11,-10,35,7,20,12,M.dark);
+makeMonster('Moss Goblin',21,-17,55,11,30,20,M.red);
+makeMonster('Crystal Golem',-17,-17,100,16,60,40,M.stone);
+makeMonster('Frost Beast',-23,17,150,22,90,65,M.ice);
+const coins=[];for(let [x,z] of [[3,1],[5,-4],[-4,-5],[14,-12],[21,12],[-17,-15],[-23,17],[7,18]]){let o=cube(x,.55,z,.55,.55,.55,M.gold);o.rotation.y=.5;coins.push({x,z,mesh:o,got:false});}
+const keys={};let yaw=0,health=100,maxHealth=100,food=5,gold=0,level=1,xp=0,power=10,defense=0,weapon='Wooden Sword',armor='Traveler Clothes',lastAttack=0,runTouch=false;
+function updateHUD(){$('health').textContent=health+' / '+maxHealth;$('healthBar').style.width=(health/maxHealth*100)+'%';$('level').textContent=level;$('xp').textContent=xp+' / '+(level*50);$('coins').textContent=gold;$('food').textContent=food;$('weapon').textContent=weapon;}
+function addXP(n){xp+=n;while(xp>=level*50){xp-=level*50;level++;maxHealth+=10;health=maxHealth;power+=2;say('⭐ LEVEL UP! You reached level '+level+'! Your health and attack power increased.');}}
+function area(){let x=player.position.x,z=player.position.z,a='Campsite';if(z<-7&&x>7)a='Dark Forest';else if(z<-7&&x<-9)a='Crystal Caves';else if(z>8&&x>7)a='Lost Village';else if(z>9&&x<-12)a='Frozen Mountains';if(Math.hypot(x,z)<7)a='Campsite';$('location').innerHTML='📍 '+a.toUpperCase()+'<br><small id="weapon">'+weapon+'</small>';return a;}
+function damagePlayer(n){let d=Math.max(1,n-defense);health-=d;if(health<=0){health=40;player.position.set(0,0,0);gold=Math.floor(gold*.8);say('💫 You were defeated and returned to camp. You lost 20% of your coins.');}updateHUD();}
+function attack(){let now=performance.now();if(now-lastAttack<450)return;lastAttack=now;let p=player.position;let m=monsters.filter(m=>m.alive&&Math.hypot(m.x-p.x,m.z-p.z)<4).sort((a,b)=>Math.hypot(a.x-p.x,a.z-p.z)-Math.hypot(b.x-p.x,b.z-p.z))[0];if(!m){say('No monster close enough. Move closer!');return;}let d=power+Math.floor(Math.random()*6);m.hp-=d;player.rotation.y=yaw;if(m.hp<=0){m.alive=false;m.group.visible=false;gold+=m.coins;addXP(m.xp);say('🏆 You defeated '+m.name+'! +'+m.coins+' coins and '+m.xp+' XP.');if(m.boss){weapon='Sunforged Greatsword';power+=20;armor='Dragon Guardian Armor';defense+=15;say('👑 BOSS DEFEATED! You earned legendary weapons and armor!');}}else{damagePlayer(m.damage);say('⚔️ You hit '+m.name+' for '+d+' damage!');}updateHUD();}
+function eat(){if(food<=0){say('No food left! Find supplies in the village.');return;}if(health>=maxHealth){say('Your health is already full!');return;}food--;health=Math.min(maxHealth,health+35);say('🍖 You ate food and restored 35 health.');updateHUD();}
+function interact(){let p=player.position;let c=coins.find(c=>!c.got&&Math.hypot(c.x-p.x,c.z-p.z)<2.5);if(c){c.got=true;c.mesh.visible=false;gold+=10;say('🪙 You collected 10 coins!');updateHUD();return;}if(Math.hypot(p.x+3,p.z-1)<5){health=maxHealth;say('🏕️ You rested at your campsite and restored all health!');updateHUD();return;}if(Math.hypot(p.x-17,p.z-14)<9){gold+=15;food+=2;say('🏘️ You searched the village and found 15 coins and 2 food!');updateHUD();return;}let m=monsters.find(m=>m.alive&&Math.hypot(m.x-p.x,m.z-p.z)<5);if(m){say(m.name+' is nearby! Press Space or Hit to attack.');return;}say('Nothing to interact with nearby. Explore the world!');}
+function showModal(title,body){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modal').style.display='grid';}
+$('closeModal').onclick=()=>$('modal').style.display='none';
+$('mapBtn').onclick=()=>showModal('🗺️ World Map','<p>🏕️ Campsite — center of the world</p><p>🌲 Dark Forest — northeast</p><p>💎 Crystal Caves — northwest</p><p>🏘️ Lost Village — southeast</p><p>🏔️ Frozen Mountains — southwest</p><p>Walk through the world to discover each region.</p>');
+$('inventoryBtn').onclick=()=>showModal('🎒 Inventory','<p>⚔️ Weapon: '+weapon+'</p><p>🛡️ Armor: '+armor+'</p><p>🍖 Food: '+food+'</p><p>🪙 Coins: '+gold+'</p><p>⭐ Level: '+level+'</p>');
+$('bossBtn').onclick=()=>{let p=player.position;let arenaBoss=monsters.find(m=>m.boss&&m.alive);if(arenaBoss){say('The Void Sovereign is already waiting in the arena!');return;}let b=makeMonster('Void Sovereign',p.x+3,p.z-4,300,30,250,300,M.purple,true);b.group.scale.setScalar(1.8);say('🔥 THE VOID SOVEREIGN HAS ARRIVED! Defeat the boss for legendary loot!');};
+$('fullBtn').onclick=()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.();};
+$('touchActions').style.display=innerWidth<700?'flex':'none';
+$('attackTouch').onclick=attack;$('eatTouch').onclick=eat;$('runTouch').onpointerdown=()=>runTouch=true;$('runTouch').onpointerup=()=>runTouch=false;$('runTouch').onpointerleave=()=>runTouch=false;
+document.querySelectorAll('[data-key]').forEach(b=>{let k=b.dataset.key;b.onpointerdown=e=>{e.preventDefault();keys[k]=true;b.setPointerCapture(e.pointerId)};['pointerup','pointercancel','lostpointercapture'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false));});
+addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(['w','a','s','d','shift',' ','e','f','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){e.preventDefault();keys[k]=true;}if(k==='e')interact();if(k===' ')attack();if(k==='f')eat();});
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+let dragging=false,lastX=0;renderer.domElement.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'){dragging=true;lastX=e.clientX;}});addEventListener('pointerup',()=>dragging=false);addEventListener('pointermove',e=>{if(dragging){yaw-=(e.clientX-lastX)*.006;lastX=e.clientX;}});
+function animate(){requestAnimationFrame(animate);let dt=Math.min(clock.getDelta(),.05),p=player.position;let forward=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0),side=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0);let len=Math.hypot(forward,side);if(len){forward/=len;side/=len;let speed=(keys.shift||runTouch?9:5)*dt;p.x+=(Math.sin(yaw)*forward+Math.cos(yaw)*side)*speed;p.z+=(-Math.cos(yaw)*forward+Math.sin(yaw)*side)*speed;player.rotation.y=yaw;player.position.x=THREE.MathUtils.clamp(p.x,-43,43);player.position.z=THREE.MathUtils.clamp(p.z,-43,43);}
+let desired=new THREE.Vector3(p.x+Math.sin(yaw)*8+4,7.5,p.z+Math.cos(yaw)*8+8);camera.position.lerp(desired,1-Math.pow(.001,dt));camera.lookAt(p.x,1,p.z);
+for(let m of monsters){if(!m.alive)continue;let dx=p.x-m.x,dz=p.z-m.z,d=Math.hypot(dx,dz);if(d<13&&d>1.7){m.x+=dx/d*dt*.8;m.z+=dz/d*dt*.8;m.group.position.set(m.x,0,m.z);m.group.lookAt(p.x,0,p.z);}if(d<1.8&&performance.now()-m.lastHit>1300){m.lastHit=performance.now();damagePlayer(m.damage);say(m.name+' hit you!');}}
+for(let c of coins){if(!c.got){c.mesh.rotation.y+=dt*1.8;c.mesh.position.y=.55+Math.sin(performance.now()*.003+c.x)*.13;if(Math.hypot(c.x-p.x,c.z-p.z)<1.25){c.got=true;c.mesh.visible=false;gold+=10;say('🪙 +10 coins!');updateHUD();}}}
+let a=area();if(a!==window.lastArea){window.lastArea=a;say('📍 You discovered '+a+'! Explore to find loot and enemies.');}
+flame.scale.y=.7+Math.sin(performance.now()*.012)*.12;flame.rotation.y+=dt;
+renderer.render(scene,camera);updateHUD();}
+const clock=new THREE.Clock();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);$('touchActions').style.display=innerWidth<700?'flex':'none';});
+updateHUD();animate();
+})();
+</script>
+</body>
+</html>
